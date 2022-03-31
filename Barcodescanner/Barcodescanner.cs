@@ -9,6 +9,7 @@ using System.Text;
 using System.Threading.Tasks;
 using System.IO.Ports;
 using System.Net.Http;
+using System.Reflection;
 
 namespace Barcodescanner
 {
@@ -30,21 +31,46 @@ namespace Barcodescanner
 
         private static readonly HttpClient httpClient = new HttpClient();
 
-
         protected override void OnStart(string[] args)
         {
-            eventLog1.WriteEntry("In OnStart. version 7");
+            string version = Assembly.GetExecutingAssembly().GetName().Version.ToString();
+            eventLog1.WriteEntry("Barcodescanner::OnStart(). version: " + version);
 
-            serialPort1.Open();
+            string[] portNames = SerialPort.GetPortNames();
+
+            if (portNames.Length<=0)
+            {
+                eventLog1.WriteEntry("No serial Ports found, please attach barcodereader to COM port (serial comport profile SPP)");
+
+            } else
+            {
+                eventLog1.WriteEntry("Available serialports: " + string.Join(", ", portNames));
+
+                string comPort = portNames[0];
+                eventLog1.WriteEntry("Trying to open serialport: " + comPort);
+
+
+                try
+                {
+                    // strategy, use first available serialport. todo: read configuration
+                    serialPort1.PortName = comPort;
+                    serialPort1.Open();
+                    eventLog1.WriteEntry("succesfully opened serialport: " + serialPort1.PortName);
+                }
+                catch (Exception ex)
+                {
+                    eventLog1.WriteEntry("tried to open serialport: " + serialPort1.PortName + ", but failed. exception: " + ex.ToString());
+                }
+            }
         }
 
         protected override void OnStop()
         {
-            eventLog1.WriteEntry("In OnStop.");
+            eventLog1.WriteEntry("Barcodescanner::OnStop.");
         }
         protected override void OnContinue()
         {
-            eventLog1.WriteEntry("In OnContinue.");
+            eventLog1.WriteEntry("Barcodescanner::OnContinue.");
         }
 
         private void serialPort1_DataReceived_1(object sender, SerialDataReceivedEventArgs e)
