@@ -10,6 +10,7 @@ using System.Threading.Tasks;
 using System.IO.Ports;
 using System.Net.Http;
 using System.Reflection;
+using System.Configuration;
 
 namespace Barcodescanner
 {
@@ -20,13 +21,8 @@ namespace Barcodescanner
             InitializeComponent();
 
             eventLog1 = new System.Diagnostics.EventLog();
-            if (!System.Diagnostics.EventLog.SourceExists("MySource"))
-            {
-                System.Diagnostics.EventLog.CreateEventSource(
-                    "MySource", "MyNewLog");
-            }
-            eventLog1.Source = "MySource";
-            eventLog1.Log = "MyNewLog";
+            eventLog1.Source = "Barcodescanner";
+            eventLog1.Log = "Application"; // default log. log name other than "Application" needs specific permissions to create different logs
         }
 
         private static readonly HttpClient httpClient = new HttpClient();
@@ -35,20 +31,28 @@ namespace Barcodescanner
         {
             string version = Assembly.GetExecutingAssembly().GetName().Version.ToString();
             eventLog1.WriteEntry("Barcodescanner::OnStart(). version: " + version);
+            eventLog1.WriteEntry("Barcodescanner::OnStart(). args:" + string.Join(", ", args));
+            // Computer\HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Services\Barcodescanner
+
+            eventLog1.WriteEntry("Barcodescanner::OnStart(). Read ConfigurationFile: " + ConfigurationManager.OpenExeConfiguration(ConfigurationUserLevel.PerUserRoamingAndLocal).FilePath);
+
+
+            //Properties.Settings.Default.accessURL = "asdf1234asdf";
+            //Properties.Settings.Default.Save();
+
+            eventLog1.WriteEntry("Barcodescanner::OnStart(). Read accessURL :" + Properties.Settings.Default.accessURL);
 
             string[] portNames = SerialPort.GetPortNames();
 
             if (portNames.Length<=0)
             {
-                eventLog1.WriteEntry("No serial Ports found, please attach barcodereader to COM port (serial comport profile SPP)");
-
+                eventLog1.WriteEntry("No serial Ports found, please attach barcodereader to serialport (serial comport profile SPP)");
             } else
             {
                 eventLog1.WriteEntry("Available serialports: " + string.Join(", ", portNames));
 
                 string comPort = portNames[0];
                 eventLog1.WriteEntry("Trying to open serialport: " + comPort);
-
 
                 try
                 {
@@ -78,11 +82,9 @@ namespace Barcodescanner
             System.IO.Ports.SerialDataReceivedEventArgs args = (System.IO.Ports.SerialDataReceivedEventArgs)e;
 
             string foo = serialPort1.ReadExisting();
-            eventLog1.WriteEntry("read byte: " + foo.Replace('%', ' '));
-
+            eventLog1.WriteEntry("Barcodescanner::serialPort1_DataReceived_1 read byte: " + foo.Replace('%', ' '));
 
             Task task = sendHttpAsync(foo);
-
         }
         async Task sendHttpAsync(string barcode)
         {
@@ -95,11 +97,10 @@ namespace Barcodescanner
 
             var content = new FormUrlEncodedContent(values);
 
-
-            eventLog1.WriteEntry("trying to sendHttpAsync() ...");
-            var response = await httpClient.PostAsync("https://langhofer.at/foo.php", content);
+            string url = "https://example.com/barcode.php";
+            eventLog1.WriteEntry("trying to sendHttpAsync() to '" + url + "' ...");
+            var response = await httpClient.PostAsync(url, content);
             eventLog1.WriteEntry("sendHttpAsync() sent.");
-
         }
     }
 }
