@@ -36,7 +36,7 @@
             // serialPort1
             // 
             this.serialPort1.PortName = "COM4";
-            this.serialPort1.DataReceived += new System.IO.Ports.SerialDataReceivedEventHandler(this.serialPort1_DataReceived_1);
+            this.serialPort1.DataReceived += new System.IO.Ports.SerialDataReceivedEventHandler(this.SerialPort1_DataReceived_1);
             // 
             // Barcodescanner
             // 

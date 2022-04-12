@@ -7,7 +7,7 @@ using System.Threading.Tasks;
 
 namespace Barcodescanner
 {
-    internal static class Program
+    internal static class Program   
     {
         /// <summary>
         /// Der Haupteinstiegspunkt für die Anwendung.

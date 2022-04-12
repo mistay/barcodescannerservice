@@ -11,60 +11,153 @@ using System.IO.Ports;
 using System.Net.Http;
 using System.Reflection;
 using System.Configuration;
+using System.IO;
+using System.Threading;
+using System.Text.Json;
+
 
 namespace Barcodescanner
 {
     public partial class Barcodescanner : ServiceBase
     {
+
+        string accessURL = "";
+        string serialPort = "";
+        bool debug = false;
+        static readonly int RETRY_TIMEOUT = 10000;
+        
         public Barcodescanner()
         {
             InitializeComponent();
 
-            eventLog1 = new System.Diagnostics.EventLog();
-            eventLog1.Source = "Barcodescanner";
-            eventLog1.Log = "Application"; // default log. log name other than "Application" needs specific permissions to create different logs
+            eventLog1 = new System.Diagnostics.EventLog
+            {
+                Source = "Barcodescanner",
+                Log = "Application" // default log. log name other than "Application" needs specific permissions to create different logs
+            };
         }
 
         private static readonly HttpClient httpClient = new HttpClient();
+        
+        private string ReadSetting(string key)
+        {
+            try
+            {
+                var appSettings = ConfigurationManager.AppSettings;
+                return appSettings[key];
+            }
+            catch (ConfigurationErrorsException e)
+            {
+                eventLog1.WriteEntry("Error reading ConfigurationManager.AppSettings settings: " + e.ToString());
+            }
+            return null;
+        }
+
+        private void SaveSettings(string key, string value)
+        {
+            try
+            {
+                var configFile = ConfigurationManager.OpenExeConfiguration(ConfigurationUserLevel.None);
+                var settings = configFile.AppSettings.Settings;
+                if (settings[key] == null)
+                {
+                    settings.Add(key, value);
+                }
+                else
+                {
+                    settings[key].Value = value;
+                }
+                configFile.Save(ConfigurationSaveMode.Modified);
+                ConfigurationManager.RefreshSection(configFile.AppSettings.SectionInformation.Name);
+            }
+            catch (ConfigurationErrorsException e)
+            {
+                eventLog1.WriteEntry("Error writing app settings: " + e.ToString());
+            }
+        }
 
         protected override void OnStart(string[] args)
         {
-            string version = Assembly.GetExecutingAssembly().GetName().Version.ToString();
-            eventLog1.WriteEntry("Barcodescanner::OnStart(). version: " + version);
-            eventLog1.WriteEntry("Barcodescanner::OnStart(). args:" + string.Join(", ", args));
-            // Computer\HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Services\Barcodescanner
+            System.ComponentModel.BackgroundWorker backgroundWorker1 = new BackgroundWorker();
+        string version = Assembly.GetExecutingAssembly().GetName().Version.ToString();
+            eventLog1.WriteEntry("OnStart(). " + Assembly.GetExecutingAssembly().GetName().FullName + " version: " + version);
 
-            eventLog1.WriteEntry("Barcodescanner::OnStart(). Read ConfigurationFile: " + ConfigurationManager.OpenExeConfiguration(ConfigurationUserLevel.PerUserRoamingAndLocal).FilePath);
+            SaveSettings("startTime", DateTime.Now.ToString());
+            SaveSettings("version", version);
 
+            eventLog1.WriteEntry("Configuration from file location: " + AppDomain.CurrentDomain.SetupInformation.ConfigurationFile);
 
-            //Properties.Settings.Default.accessURL = "asdf1234asdf";
-            //Properties.Settings.Default.Save();
-
-            eventLog1.WriteEntry("Barcodescanner::OnStart(). Read accessURL :" + Properties.Settings.Default.accessURL);
-
-            string[] portNames = SerialPort.GetPortNames();
-
-            if (portNames.Length<=0)
+            accessURL = ReadSetting("accessURL");
+            if (accessURL == null)
             {
-                eventLog1.WriteEntry("No serial Ports found, please attach barcodereader to serialport (serial comport profile SPP)");
+                accessURL = "https://example.com/barcodescanread.php";
+                SaveSettings("accessURL", accessURL);
+            }
+            serialPort = ReadSetting("serialPort");
+            if (serialPort == null)
+            {
+                serialPort = "COM1";
+                SaveSettings("serialPort", serialPort);
+            }
+
+            string tmpDebug = ReadSetting("debug");
+            if (tmpDebug == null)
+            {
+                debug = false;
+                SaveSettings("debug", "false");
             } else
             {
-                eventLog1.WriteEntry("Available serialports: " + string.Join(", ", portNames));
+                if (tmpDebug.ToLower().Contains("true"))
+                    debug = true;
+            }
 
-                string comPort = portNames[0];
-                eventLog1.WriteEntry("Trying to open serialport: " + comPort);
+            eventLog1.WriteEntry("Read accessURL from settings file: " + accessURL);
+            eventLog1.WriteEntry("Read serialPort from settings file: " + serialPort);
+            eventLog1.WriteEntry("Read debug from settings file: " + debug.ToString());
 
-                try
-                {
-                    // strategy, use first available serialport. todo: read configuration
-                    serialPort1.PortName = comPort;
-                    serialPort1.Open();
-                    eventLog1.WriteEntry("succesfully opened serialport: " + serialPort1.PortName);
+            backgroundWorker1.DoWork += new DoWorkEventHandler(BackgroundWorkerTryConnect);
+            backgroundWorker1.RunWorkerAsync();
+        }
+
+        private void BackgroundWorkerTryConnect(object sender, DoWorkEventArgs e)
+        {
+            while (true) {
+                
+                if (!serialPort1.IsOpen) { 
+
+                    string[] portNames = SerialPort.GetPortNames();
+
+                    if (portNames.Length <= 0)
+                    {
+                        eventLog1.WriteEntry("No serial Ports found, please attach barcodereader to serialport (serial comport profile SPP)");
+                    }
+                    else
+                    {
+                        eventLog1.WriteEntry("Available serialports: " + string.Join(", ", portNames));
+
+                        if (portNames.Any(x => x.Equals(serialPort))) { 
+
+
+                            eventLog1.WriteEntry("Trying to open serialport: " + serialPort);
+
+                            try
+                            {
+                                serialPort1.PortName = serialPort;
+                                serialPort1.Open();
+                                eventLog1.WriteEntry("succesfully opened serialport: " + serialPort1.PortName);
+                            }
+                            catch (Exception ex)
+                            {
+                                eventLog1.WriteEntry("tried to open serialport: " + serialPort1.PortName + ", but failed. exception: " + ex.ToString());
+                            }
+                        } else {
+                            eventLog1.WriteEntry("Configured serialport " + serialPort + " is not available, waiting...");
+                        }
+                    }
                 }
-                catch (Exception ex)
-                {
-                    eventLog1.WriteEntry("tried to open serialport: " + serialPort1.PortName + ", but failed. exception: " + ex.ToString());
-                }
+
+                eventLog1.WriteEntry("retrying to connect to " + serialPort + " in " + RETRY_TIMEOUT + " seconds");
+                System.Threading.Thread.Sleep(RETRY_TIMEOUT);
             }
         }
 
@@ -77,30 +170,51 @@ namespace Barcodescanner
             eventLog1.WriteEntry("Barcodescanner::OnContinue.");
         }
 
-        private void serialPort1_DataReceived_1(object sender, SerialDataReceivedEventArgs e)
+        private void SerialPort1_DataReceived_1(object sender, SerialDataReceivedEventArgs e)
         {
-            System.IO.Ports.SerialDataReceivedEventArgs args = (System.IO.Ports.SerialDataReceivedEventArgs)e;
+            // System.IO.Ports.SerialDataReceivedEventArgs args = (System.IO.Ports.SerialDataReceivedEventArgs)e;
 
             string foo = serialPort1.ReadExisting();
             eventLog1.WriteEntry("Barcodescanner::serialPort1_DataReceived_1 read byte: " + foo.Replace('%', ' '));
 
-            Task task = sendHttpAsync(foo);
+            SendHttpAsync(foo);
         }
-        async Task sendHttpAsync(string barcode)
+
+        async void SendHttpAsync(string tag)
         {
             eventLog1.WriteEntry("sendHttpAsync()");
 
-            var values = new Dictionary<string, string>
+            Barcodeparameter barcodeparameter = new Barcodeparameter
             {
-                { "barcode", barcode },
+                Tag = tag,
+                Protocol_version = "1"
             };
 
-            var content = new FormUrlEncodedContent(values);
+            string myJSON = "";
+            try
+            {
+                myJSON = JsonSerializer.Serialize(barcodeparameter);
+            }
+            catch (Exception ex)
+            {
+                eventLog1.WriteEntry("could not serialize to json: " + ex.ToString());
+            }
 
-            string url = "https://example.com/barcode.php";
-            eventLog1.WriteEntry("trying to sendHttpAsync() to '" + url + "' ...");
-            var response = await httpClient.PostAsync(url, content);
-            eventLog1.WriteEntry("sendHttpAsync() sent.");
+            StringContent content = new StringContent(myJSON, Encoding.UTF8, "application/json");
+
+            if (debug)
+                eventLog1.WriteEntry("trying to sendHttpAsync() value '" + string.Join(", ", content) + "' to '" + accessURL + "' ...");
+
+            try
+            {
+                HttpResponseMessage httpResponseMessage = await httpClient.PostAsync(new Uri(accessURL), content);
+
+                string body = await httpResponseMessage.Content.ReadAsStringAsync();
+                eventLog1.WriteEntry("received http statuscode: " + (int)httpResponseMessage.StatusCode + " body: " + body);
+            } catch (Exception ex)
+            {
+                eventLog1.WriteEntry("Could not PostAsync()" + ex.ToString());
+            }
         }
     }
 }
