@@ -8,7 +8,7 @@ namespace Barcodescanner
 {
     internal class Barcodeparameter
     {
-        public string Tag { get; set; }
-        public string Protocol_version { get; set; }
+        public string tag { get; set; }
+        public string protocol_version { get; set; }
     }
 }

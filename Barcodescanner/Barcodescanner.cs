@@ -174,20 +174,20 @@ namespace Barcodescanner
         {
             // System.IO.Ports.SerialDataReceivedEventArgs args = (System.IO.Ports.SerialDataReceivedEventArgs)e;
 
-            string foo = serialPort1.ReadExisting();
-            eventLog1.WriteEntry("Barcodescanner::serialPort1_DataReceived_1 read byte: " + foo.Replace('%', ' '));
+            string tag = serialPort1.ReadExisting();
+            eventLog1.WriteEntry("Barcodescanner::serialPort1_DataReceived_1 read byte: " + tag.Replace('%', ' '));
 
-            SendHttpAsync(foo);
+            SendHttpAsync(tag);
         }
 
         async void SendHttpAsync(string tag)
         {
-            eventLog1.WriteEntry("sendHttpAsync()");
+            eventLog1.WriteEntry("sendHttpAsync(). tag: " + tag);
 
             Barcodeparameter barcodeparameter = new Barcodeparameter
             {
-                Tag = tag,
-                Protocol_version = "1"
+                tag = tag,
+                protocol_version = "1"
             };
 
             string myJSON = "";
